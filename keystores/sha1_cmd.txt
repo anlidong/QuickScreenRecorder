@@ -1,0 +1,1 @@
+keytool -list -v -keystore keystores/abkey.qwertyuiop -alias assistant

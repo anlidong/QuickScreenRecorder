@@ -14,6 +14,7 @@ import android.media.MediaRecorder;
 import android.media.projection.MediaProjection;
 import android.media.projection.MediaProjectionManager;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.util.DisplayMetrics;
 import android.util.Log;
 import android.util.SparseIntArray;
@@ -51,6 +52,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     ActivityMainBinding binding;
 
+    String screenRecorderName;
+
     static {
         ORIENTTIONS.append(Surface.ROTATION_0, 90);
         ORIENTTIONS.append(Surface.ROTATION_90, 0);
@@ -61,42 +64,69 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_main);
         binding = DataBindingUtil.setContentView(this, R.layout.activity_main);
 
         binding.setOnClickListener(this);
 
-        DisplayMetrics metrics = new DisplayMetrics();
-        getWindowManager().getDefaultDisplay().getMetrics(metrics);
-        mScreenDensity = metrics.densityDpi;
+        RxPermissions rxPermissions = new RxPermissions(this);
+        rxPermissions.request(Manifest.permission.RECORD_AUDIO,
+                Manifest.permission.READ_EXTERNAL_STORAGE,
+                Manifest.permission.WRITE_EXTERNAL_STORAGE)
+                .subscribe(new Consumer<Boolean>() {
+                    @Override
+                    public void accept(Boolean aBoolean) throws Exception {
+                        if(aBoolean) {
+                            DisplayMetrics metrics = new DisplayMetrics();
+                            getWindowManager().getDefaultDisplay().getMetrics(metrics);
+                            mScreenDensity = metrics.densityDpi;
 
-        mMediaRecorder = new MediaRecorder();
-        mProjectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+                            mMediaRecorder = new MediaRecorder();
+                            mProjectionManager = (MediaProjectionManager) getSystemService(Context.MEDIA_PROJECTION_SERVICE);
+                        } else {
+                            Log.d("anlddev", "获取权限失败");
+                            Toast.makeText(MainActivity.this, "未获取到所需权限", Toast.LENGTH_SHORT).show();
+                            finish();
+                        }
+                    }
+                }, new Consumer<Throwable>() {
+                    @Override
+                    public void accept(Throwable throwable) throws Exception {
+                        Log.d("anlddev", "error:" + throwable.getMessage());
+                        Toast.makeText(MainActivity.this, "未获取到所需权限", Toast.LENGTH_SHORT).show();
+                        finish();
+                    }
+                });
+
     }
 
     @Override
     public void onClick(View v) {
         switch (v.getId()) {
             case R.id.btn_screen_recorder:
-                RxPermissions rxPermissions = new RxPermissions(this);
-                rxPermissions.request(Manifest.permission.RECORD_AUDIO,
-                        Manifest.permission.READ_EXTERNAL_STORAGE,
-                        Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                        .subscribe(new Consumer<Boolean>() {
-                            @Override
-                            public void accept(Boolean aBoolean) throws Exception {
-                                if(aBoolean) {
-                                    isStartRecordScreen();
-                                } else {
-                                    Log.d("anlddev", "获取权限失败");
-                                }
-                            }
-                        }, new Consumer<Throwable>() {
-                            @Override
-                            public void accept(Throwable throwable) throws Exception {
-                                Log.d("anlddev", "error:" + throwable.getMessage());
-                            }
-                        });
+//                RxPermissions rxPermissions = new RxPermissions(this);
+//                rxPermissions.request(Manifest.permission.RECORD_AUDIO,
+//                        Manifest.permission.READ_EXTERNAL_STORAGE,
+//                        Manifest.permission.WRITE_EXTERNAL_STORAGE)
+//                        .subscribe(new Consumer<Boolean>() {
+//                            @Override
+//                            public void accept(Boolean aBoolean) throws Exception {
+//                                if(aBoolean) {
+//                                    isStartRecordScreen();
+//                                } else {
+//                                    Log.d("anlddev", "获取权限失败");
+//                                }
+//                            }
+//                        }, new Consumer<Throwable>() {
+//                            @Override
+//                            public void accept(Throwable throwable) throws Exception {
+//                                Log.d("anlddev", "error:" + throwable.getMessage());
+//                            }
+//                        });
+                isStartRecordScreen();
+                break;
+            case R.id.iv_video_list:
+                Intent intent = new Intent(this, VideoListActivity.class);
+                startActivity(intent);
                 break;
             default:
                 break;
@@ -109,9 +139,21 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             initRecorder();
             recordScreen();
         } else {
-            mMediaRecorder.stop();
-            mMediaRecorder.reset();
-            stopRecordScreen();
+            AlertDialog.Builder builder = new AlertDialog.Builder(this);
+            builder.setTitle("确认要结束当前录屏吗？")
+                    .setPositiveButton("结束", new DialogInterface.OnClickListener() {
+                        @Override
+                        public void onClick(DialogInterface dialog, int which) {
+                            mMediaRecorder.stop();
+                            mMediaRecorder.reset();
+                            stopRecordScreen();
+                        }
+                    }).setNegativeButton("取消", new DialogInterface.OnClickListener() {
+                @Override
+                public void onClick(DialogInterface dialog, int which) {
+
+                }
+            }).create().show();
         }
     }
     //初始化录制参数
@@ -128,8 +170,8 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             mMediaRecorder.setAudioSource(MediaRecorder.AudioSource.MIC);// 音频源
             mMediaRecorder.setVideoSource(MediaRecorder.VideoSource.SURFACE);// 视频源
             mMediaRecorder.setOutputFormat(MediaRecorder.OutputFormat.MPEG_4);//视频输出格式
-            //这里的路径我是直接写死了。。。
-            mMediaRecorder.setOutputFile(sdcard + "/ScreenRecorder/" + System.currentTimeMillis() + ".mp4");//存储路径
+            screenRecorderName = String.valueOf(System.currentTimeMillis());
+            mMediaRecorder.setOutputFile(sdcard + "/ScreenRecorder/" + screenRecorderName + ".mp4");//存储路径
             mMediaRecorder.setVideoSize(DISPLAY_WIDTH, DISPLAY_HEIGHT);// 设置分辨率
             mMediaRecorder.setVideoEncoder(MediaRecorder.VideoEncoder.H264);// 视频录制格式
             mMediaRecorder.setAudioEncoder(MediaRecorder.AudioEncoder.AAC);// 音频格式
@@ -194,11 +236,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         if (requestCode == RECORD_REQUEST_CODE) {
 
             if (resultCode != RESULT_OK) {
-                Toast.makeText(MainActivity.this, "录屏权限被禁止了啊", Toast.LENGTH_SHORT).show();
+                Toast.makeText(MainActivity.this, "未获取到所需权限", Toast.LENGTH_SHORT).show();
 //                isRecording = false;
 //                changeText();
                 mMediaRecorder.reset();
                 stopRecordScreen();
+                File file = new File(sdcard + "/ScreenRecorder/" + screenRecorderName + ".mp4");
+                if(file.exists()) {
+                    file.delete();
+                }
                 return;
             }
 
